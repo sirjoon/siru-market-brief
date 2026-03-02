@@ -9,6 +9,7 @@ import sys
 import datetime
 import requests
 import json
+import time
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -221,15 +222,28 @@ def run_brief(brief_type: str) -> str:
 
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-    response = client.messages.create(
-        model="claude-opus-4-6",
-        max_tokens=4000,
-        tools=[{
-            "type": "web_search_20250305",
-            "name": "web_search",
-        }],
-        messages=[{"role": "user", "content": prompt}]
-    )
+    # Retry with backoff for rate limits
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=16000,
+                tools=[{
+                    "type": "web_search_20250305",
+                    "name": "web_search",
+                    "max_uses": 10,
+                }],
+                messages=[{"role": "user", "content": prompt}]
+            )
+            break
+        except anthropic.RateLimitError as e:
+            if attempt < max_retries - 1:
+                wait = 60 * (attempt + 1)
+                print(f"⏳ Rate limited, waiting {wait}s before retry {attempt + 2}/{max_retries}...")
+                time.sleep(wait)
+            else:
+                raise
 
     # Extract text from response (may include tool_use blocks)
     output_parts = []
