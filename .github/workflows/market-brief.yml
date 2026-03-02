@@ -20,6 +20,9 @@ on:
           - evening
           - catalyst
 
+permissions:
+  contents: write
+
 jobs:
   generate-brief:
     runs-on: ubuntu-latest
