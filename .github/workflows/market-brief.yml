@@ -1,0 +1,73 @@
+name: 📊 SPY Market Intelligence Brief
+
+on:
+  schedule:
+    # 7:00 AM IST  = 01:30 UTC  (Mon–Fri)
+    - cron: '30 1 * * 1-5'
+    # 9:00 PM IST  = 15:30 UTC  (Mon–Fri)
+    - cron: '30 15 * * 1-5'
+
+  # Run manually from GitHub UI with choice of brief type
+  workflow_dispatch:
+    inputs:
+      brief_type:
+        description: 'Brief type to run'
+        required: true
+        default: 'morning'
+        type: choice
+        options:
+          - morning
+          - evening
+          - catalyst
+
+jobs:
+  generate-brief:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: ⬇️ Checkout repo
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 📦 Install dependencies
+        run: pip install -r requirements.txt
+
+      # Determine if this is a morning or evening run based on UTC hour
+      - name: 🕐 Detect brief type
+        id: detect_type
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "type=${{ inputs.brief_type }}" >> $GITHUB_OUTPUT
+          else
+            HOUR=$(date -u +%H)
+            if [ "$HOUR" -lt "10" ]; then
+              echo "type=morning" >> $GITHUB_OUTPUT
+            else
+              echo "type=evening" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: 🧠 Generate brief
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TELEGRAM_TOKEN:    ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID:  ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python src/brief_generator.py ${{ steps.detect_type.outputs.type }}
+
+      # Commit the generated brief back to the repo for history
+      - name: 💾 Commit brief to repo
+        run: |
+          git config --global user.name  "market-brief-bot"
+          git config --global user.email "bot@market-brief"
+          git add briefs/
+          git diff --staged --quiet || git commit -m "brief: ${{ steps.detect_type.outputs.type }} $(date +'%Y-%m-%d')"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
